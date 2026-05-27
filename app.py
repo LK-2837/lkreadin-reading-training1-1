@@ -29,7 +29,7 @@ QUIZ_DATA = {
 if "quiz_state" not in st.session_state:
     st.session_state.quiz_state = {
         q_id: {
-            "stage": "solving",       # solving -> step1 -> step2 -> step3 -> done
+            "stage": "solving",       
             "wrong_para_warning": False,
             "result": "진행 중 ⏳"
         } for q_id in QUIZ_DATA.keys()
@@ -37,7 +37,6 @@ if "quiz_state" not in st.session_state:
 if "last_active_q" not in st.session_state:
     st.session_state.last_active_q = 1
 
-# 셀렉트박스 변경 시 현재 어떤 문제를 건드리고 있는지 저장하는 함수
 def update_active_q(q_id):
     st.session_state.last_active_q = q_id
 
@@ -45,51 +44,48 @@ st.title("🚀 국어 독해 논리력 단계별 완전학습")
 st.caption("틀린 문제는 스스로 힌트 문단을 찾고 고쳐 풀며 3차 통과를 목표로 도전해 보세요!")
 st.markdown("---")
 
-# 레이아웃 분할
 col1, col2 = st.columns([1, 1])
 
-# 현재 활성화된 문제와 상태 파악
 active_q = st.session_state.last_active_q
 active_state = st.session_state.quiz_state[active_q]
 
-# 형광펜을 칠할 문단 번호 결정 로직 (Live Highlight)
+# 형광펜 라이브 렌더링 로직
 highlight_para_num = None
 if active_state["stage"] == "step1":
-    # 학생이 현재 셀렉트박스에서 선택하고 있는 문단 번호를 즉시 반영
     sb_value = st.session_state.get(f"sb_{active_q}")
     if sb_value:
         highlight_para_num = int(sb_value.replace("문단", ""))
 elif active_state["stage"] in ["step2", "step3"]:
-    # 정답 문단을 맞춘 상태면 정답 문단을 고정 하이라이트
     highlight_para_num = QUIZ_DATA[active_q]["correct_para"]
 
-# [왼쪽 열: 지문 상시 고정 및 실시간 형광펜]
+# [왼쪽 열: 지문 영역]
 with col1:
     st.subheader("📜 01. 곰과 두 친구 (본문)")
     story_html = ""
     for idx, para in enumerate(PARAGRAPHS):
         para_num = idx + 1
         if para_num == highlight_para_num:
-            # 선택된 문단은 노란색 형광펜 효과
             story_html += f"<div style='background-color: #FFF9C4; padding: 12px; border-radius: 5px; margin-bottom: 10px; border-left: 5px solid #FBC02D; font-size:16px; line-height:1.8; color: black; font-weight: bold;'><b>[{para_num}문단]</b> {para}</div>"
         else:
             story_html += f"<div style='padding: 12px; margin-bottom: 10px; font-size:16px; line-height:1.8; color:#333333;'><b>[{para_num}문단]</b> {para}</div>"
             
     st.markdown(f"<div style='background-color: #F8F9FA; padding: 15px; border-radius: 10px; border: 1px solid #E0E0E0;'>{story_html}</div>", unsafe_allow_html=True)
 
-# [오른쪽 열: 문제 풀이 및 단계별 미션]
+# [오른쪽 열: 문제 영역]
 with col2:
     st.subheader("✏️ 훈련 미션 단원")
     tabs = st.tabs([f"{i}번 문제" for i in QUIZ_DATA.keys()])
     
     for idx, (q_id, q_info) in enumerate(QUIZ_DATA.items()):
         with tabs[idx]:
-            # 탭을 클릭하거나 조작할 때 해당 문제를 활성화
             state = st.session_state.quiz_state[q_id]
+            
+            # ⭐ [핵심 패치] 문제 발문을 탭 최상단에 고정하여 어느 단계에서든 상시 노출되게 함
+            st.markdown(f"### 📍 {q_info['question']}")
+            st.markdown("---")
             
             # --- [1차 풀이 단계] ---
             if state["stage"] == "solving":
-                st.markdown(f"#### {q_info['question']}")
                 user_choice = st.radio("정답을 고르세요:", q_info["options"], key=f"select_{q_id}", on_change=update_active_q, args=(q_id,))
                 
                 if st.button("정답 확인", key=f"btn_solve_{q_id}"):
@@ -102,14 +98,14 @@ with col2:
                         state["stage"] = "step1"
                         st.rerun()
             
-            # --- [Step 1: 힌트 문단 찾기 단계 - 잘못 고르면 경고] ---
+            # --- [Step 1: 힌트 문단 찾기 단계] ---
             elif state["stage"] == "step1":
-                st.error("❌ 1차 시도 오답입니다.")
-                st.markdown("### 🔍 [Step 1] 힌트 문단 찾기 미션")
-                st.info("오른쪽에서 문단을 변경하면 왼쪽에 자동으로 형광펜이 칠해집니다. 단서가 있는 문단을 찾아보세요!")
+                st.error("❌ 1차 시도 오답입니다. 발문을 다시 읽고 힌트 구역을 조율해 보세요.")
+                st.markdown("#### 🔍 [Step 1] 힌트 문단 찾기 미션")
+                st.info("오른쪽에서 문단을 바꾸면 왼쪽에 형광펜이 실시간으로 동기화됩니다.")
                 
                 chosen_para = st.selectbox(
-                    "힌트 문단 선택:", 
+                    "이 문제의 핵심 단서가 들어있는 문단 선택:", 
                     options=[f"{i}문단" for i in range(1, len(PARAGRAPHS)+1)], 
                     key=f"sb_{q_id}",
                     on_change=update_active_q,
@@ -132,10 +128,9 @@ with col2:
             
             # --- [Step 2: 2차 풀이 단계] ---
             elif state["stage"] == "step2":
-                st.success(f"🎯 대단해요! {q_info['correct_para']}문단에서 단서를 찾아냈군요!")
-                st.markdown("### 📝 [Step 2] 2차 시도 - 정답 고치기")
+                st.success(f"🎯 대단해요! {q_info['correct_para']}문단에서 정확히 단서를 포착했습니다.")
+                st.markdown("#### 📝 [Step 2] 2차 시도 - 정답 고치기")
                 
-                st.markdown(f"#### {q_info['question']}")
                 user_choice_2 = st.radio("정답을 다시 고르세요:", q_info["options"], key=f"retry2_{q_id}", on_change=update_active_q, args=(q_id,))
                 
                 if st.button("2차 확인", key=f"btn_retry2_{q_id}"):
@@ -150,11 +145,9 @@ with col2:
             
             # --- [Step 3: 3차 풀이 단계] ---
             elif state["stage"] == "step3":
-                st.error("❌ 2차 시도도 아쉽게 틀렸습니다.")
-                st.markdown("### 📝 [Step 3] 3차 시도 - 최종 기회")
-                st.warning("형광펜 칠해진 문단을 단어 하나하나 소리 내어 읽어보고 마지막으로 골라보세요.")
+                st.error("❌ 2차 시도도 아쉽게 틀렸습니다. 마지막 집중력을 발휘해 보세요.")
+                st.markdown("#### 📝 [Step 3] 3차 시도 - 최종 기회")
                 
-                st.markdown(f"#### {q_info['question']}")
                 user_choice_3 = st.radio("정답을 다시 고르세요:", q_info["options"], key=f"retry3_{q_id}", on_change=update_active_q, args=(q_id,))
                 
                 if st.button("3차 확인", key=f"btn_retry3_{q_id}"):
@@ -164,37 +157,30 @@ with col2:
                         state["result"] = "3차 통과 🥉"
                         st.rerun()
                     else:
-                        st.error("❌ 아직 오답입니다. 다시 집중해서 읽어봅시다!")
+                        st.error("❌ 아직 오답입니다. 형광펜 문단을 정독하며 깊이 고민해 봅시다.")
 
             # --- [최종 완료 단계] ---
             elif state["stage"] == "done":
-                st.success(f"🎉 미션 완료! 이 문제는 [{state['result']}] 상태입니다.")
+                st.success(f"🎉 미션 완료! 이 문제는 [{state['result']}]로 클리어 되었습니다.")
 
-# 4. 화면 하단 실시간 성적표 대시보드
+# 4. 하단 실시간 성적표 대시보드
 st.markdown("<br><br>", unsafe_allow_html=True)
 st.markdown("---")
 st.header("📊 실시간 학습 성적표")
-st.caption("스스로 단서를 추적해 원킬 통과(1차 통과)를 늘려보세요!")
 
-# 성적표를 가로로 깔끔하게 배치하기 위한 컬럼 구성
 report_cols = st.columns(len(QUIZ_DATA))
 for idx, q_id in enumerate(QUIZ_DATA.keys()):
     with report_cols[idx]:
         q_res = st.session_state.quiz_state[q_id]["result"]
         
-        # 패스 단계별 색상 디자인 부여
         if "1차" in q_res:
-            bg_color = "#E8F5E9" # 초록
-            text_color = "#2E7D32"
+            bg_color = "#E8F5E9"; text_color = "#2E7D32"
         elif "2차" in q_res:
-            bg_color = "#FFF3E0" # 주황
-            text_color = "#EF6C00"
+            bg_color = "#FFF3E0"; text_color = "#EF6C00"
         elif "3차" in q_res:
-            bg_color = "#E1F5FE" # 파랑
-            text_color = "#0277BD"
+            bg_color = "#E1F5FE"; text_color = "#0277BD"
         else:
-            bg_color = "#F5F5F5" # 회색 (진행 중)
-            text_color = "#616161"
+            bg_color = "#F5F5F5"; text_color = "#616161"
             
         st.markdown(
             f"<div style='background-color: {bg_color}; padding: 15px; border-radius: 8px; text-align: center; border: 1px solid {text_color};'>"
