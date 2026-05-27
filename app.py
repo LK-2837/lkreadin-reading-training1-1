@@ -1,4 +1,5 @@
 import streamlit as st
+import time  # ⭐ 카운트다운 초시계를 위한 라이브러리 추가
 
 # 1. 페이지 레이아웃 설정
 st.set_page_config(layout="wide", page_title="국어 논리력 시한폭탄 훈련")
@@ -29,10 +30,11 @@ QUIZ_DATA = {
 if "quiz_state" not in st.session_state:
     st.session_state.quiz_state = {
         q_id: {
-            "stage": "solving",       # solving -> step1 -> step2 -> step3 -> exploded / done
+            "stage": "solving",       
             "wrong_para_warning": False,
             "result": "진행 중 ⏳",
-            "mistakes": 0             # 폭탄용 오답 카운트
+            "mistakes": 0,
+            "lockout_done": False     # ⭐ 1분 타임락 완료 여부 플래그
         } for q_id in QUIZ_DATA.keys()
     }
 if "active_tab" not in st.session_state:
@@ -68,7 +70,7 @@ if st.session_state.print_view:
 
 # --- [💻 일반 학습 화면 모드] ---
 st.title("🚀 국어 독해 논리력 시한폭탄 훈련")
-st.caption("문제를 틀릴 때마다 불꽃이 폭탄과 가까워집니다! 폭발하기 전에 단서를 추적하세요!")
+st.caption("문제를 틀릴 때마다 불꽃이 폭탄과 가까워집니다! 폭발하면 1분간 화면이 잠기니 주의하세요!")
 
 col1, col2 = st.columns([1, 1])
 
@@ -79,15 +81,19 @@ current_q_id = q_list[current_idx]
 active_state = st.session_state.quiz_state[current_q_id]
 q_info = QUIZ_DATA[current_q_id]
 
-# 모든 문제를 처리했는지 판정 (성공했거나 혹은 터졌거나 둘 다 완료로 간주)
-all_completed = all(st.session_state.quiz_state[qid]["stage"] in ["done", "exploded"] for qid in QUIZ_DATA.keys())
+# 모든 문제를 처리했는지 판정 (타임락까지 완전히 끝난 실패작만 완료로 인정)
+all_completed = all(
+    st.session_state.quiz_state[qid]["stage"] == "done" or 
+    (st.session_state.quiz_state[qid]["stage"] == "exploded" and st.session_state.quiz_state[qid].get("lockout_done", False))
+    for qid in QUIZ_DATA.keys()
+)
 
-# 형광펜 라이브 하이라이트 알고리즘
+# ⭐ [피드백 반영] 폭탄이 터졌을 때도 아이가 정답 문단을 강제로 공부할 수 있도록 'exploded' 상태일 때도 노란 형광펜 상시 유지
 highlight_para_num = None
 if active_state["stage"] == "step1":
     sb_value = st.session_state.get(f"sb_{current_q_id}")
     if sb_value: highlight_para_num = int(sb_value.replace("문단", ""))
-elif active_state["stage"] in ["step2", "step3"]:
+elif active_state["stage"] in ["step2", "step3", "exploded"]:
     highlight_para_num = QUIZ_DATA[current_q_id]["correct_para"]
 
 # [왼쪽 열: 지문 영역]
@@ -106,7 +112,7 @@ with col1:
 with col2:
     st.subheader("✏️ 훈련 미션 영역")
     
-    # 💣 [실시간 폭탄 게이지 UI 렌더링 엔진]
+    # 실시간 폭탄 게이지 UI
     mistakes = active_state["mistakes"]
     if active_state["stage"] != "exploded":
         if mistakes == 0:
@@ -117,7 +123,7 @@ with col2:
             bomb_bar = "<div style='font-size: 18px; text-align: center; background-color: #FED7D7; padding: 10px; border-radius: 8px; margin-bottom: 15px;'>💣 🟩🟨🟨🟥🟥 🔥 <span style='font-size: 13px; color: #C53030; font-weight: bold;'>(경고! 다음 오답 시 대폭발!)</span></div>"
         st.markdown(bomb_bar, unsafe_allow_html=True)
 
-    # 📍 문제 발문 노출 (크기 18px 축소 반영)
+    # 📍 문제 발문 노출
     if active_state["stage"] != "exploded":
         st.markdown(f"<div style='font-size: 18px; font-weight: bold; color: #1E3A8A; background-color: #EDF2F7; padding: 12px; border-radius: 6px; margin-bottom: 15px;'>📍 {q_info['question']}</div>", unsafe_allow_html=True)
 
@@ -128,8 +134,7 @@ with col2:
             if choice == q_info["answer"]:
                 active_state["stage"] = "done"; active_state["result"] = "1차 통과 🥇"
             else:
-                active_state["stage"] = "step1"
-                active_state["mistakes"] = 1 # 첫 번째 불꽃 전진
+                active_state["stage"] = "step1"; active_state["mistakes"] = 1
             st.rerun()
 
     # --- [Step 1: 힌트 문단 찾기 단계] ---
@@ -137,10 +142,8 @@ with col2:
         st.error("❌ 1차 시도 오답입니다. 폭탄이 작동하기 시작했습니다!")
         st.markdown("#### 🔍 [Step 1] 힌트 문단 찾기 미션")
         c_para = st.selectbox("단서가 있는 문단 선택:", [f"{i}문단" for i in range(1, len(PARAGRAPHS)+1)], key=f"sb_{current_q_id}")
-        
         if active_state["wrong_para_warning"]: 
             st.markdown("<div style='color: #C53030; font-weight:bold; margin-bottom:10px;'>⚠️ 다시 생각해보세요! 이 문단에는 단서가 없습니다.</div>", unsafe_allow_html=True)
-            
         if st.button("문단 확인", key=f"bp_{current_q_id}"):
             if int(c_para.replace("문단", "")) == q_info["correct_para"]:
                 active_state["stage"] = "step2"; active_state["wrong_para_warning"] = False
@@ -157,8 +160,7 @@ with col2:
             if choice2 == q_info["answer"]:
                 active_state["stage"] = "done"; active_state["result"] = "2차 통과 🥈"
             else:
-                active_state["stage"] = "step3"
-                active_state["mistakes"] = 2 # 두 번째 불꽃 바짝 전진
+                active_state["stage"] = "step3"; active_state["mistakes"] = 2
             st.rerun()
 
     # --- [Step 3: 3차 풀이 단계] ---
@@ -170,33 +172,65 @@ with col2:
             if choice3 == q_info["answer"]:
                 active_state["stage"] = "done"; active_state["result"] = "3차 통과 🥉"
             else:
-                # 💥 3차 최종 오답 발생: 폭탄 대폭발 모드 진입
+                # 💥 3차 탈락 시 폭탄 대폭발 및 패널티 락온 진입
                 active_state["stage"] = "exploded"
                 active_state["mistakes"] = 3
                 active_state["result"] = "미션 실패 ❌"
+                active_state["lockout_done"] = False
             st.rerun()
 
-    # --- [💥 대폭발 화면 처리 모드] ---
+    # --- [💥 피드백 반영: 대폭발 및 1분 강제 잠금 타이머 모드] ---
     elif active_state["stage"] == "exploded":
         st.markdown(
-            "<div style='background-color: #742A2A; color: #FFF5F5; padding: 30px; border-radius: 12px; text-align: center; border: 4px solid #E53E3E; box-shadow: 0px 4px 15px rgba(229, 62, 62, 0.5);'>"
-            "<h1 style='margin: 0; font-size: 36px;'>💥 콰광!!! 대폭발!!! 💥</h1>"
-            "<p style='font-size: 20px; font-weight: bold; margin-top: 15px; color: #FEB2B2;'>미션 실패! 폭탄이 터졌습니다. 😭</p>"
-            "<p style='font-size: 14px; color: #E2E8F0;'>단서를 놓쳐 탈출에 실패했습니다. 다음 문제에서 만회해 보세요!</p>"
+            "<div style='background-color: #742A2A; color: #FFF5F5; padding: 25px; border-radius: 12px; text-align: center; border: 4px solid #E53E3E; box-shadow: 0px 4px 15px rgba(229, 62, 62, 0.5);'>"
+            "<h2 style='margin: 0; font-size: 28px;'>💥 콰광!!! 대폭발!!! 💥</h2>"
+            "<p style='font-size: 16px; font-weight: bold; margin-top: 10px; color: #FEB2B2;'>미션 실패! 폭탄이 완전히 터졌습니다.</p>"
+            "<p style='font-size: 14px; color: #E2E8F0; margin: 0;'>왼쪽에 노란색으로 특별 표시된 <b>정답 힌트 문단</b>과 아래 문제를 1분 동안 정독하세요.</p>"
             "</div>",
             unsafe_allow_html=True
         )
         st.write("")
-        if current_idx < len(QUIZ_DATA) - 1:
-            st.button("다음 문제로 넘어가기 ➡️", on_click=go_next)
+        
+        # 1분 동안 문제와 선택지를 계속 노출하되 버튼 및 클릭 요소는 완전히 잠금(disabled)
+        st.markdown(f"<div style='font-size: 17px; font-weight: bold; color: #4A5568; background-color: #EDF2F7; padding: 12px; border-radius: 6px;'>📍 복습용 발문 고정: {q_info['question']}</div>", unsafe_allow_html=True)
+        st.radio("선택지 복습 구역 (잠금됨):", q_info["options"], key=f"locked_opt_{current_q_id}", disabled=True)
+        st.write("")
+
+        # ⏳ 실시간 60초 거꾸로 카운트다운 타이머 구동부
+        if not active_state.get("lockout_done", False):
+            timer_placeholder = st.empty()
+            for remaining in range(60, -1, -1):
+                timer_placeholder.error(f"⏳ 강제 복습 시스템 작동 중: {remaining}초 동안 다른 버튼이 비활성화됩니다.")
+                time.sleep(1) # 1초씩 스크립트 홀딩 및 새로고침 효과
+            active_state["lockout_done"] = True
+            st.rerun()
+
+        # 🔓 60초 카운트다운이 무사히 끝나 시계가 0이 되면 잠금 해제 화면 출력
+        st.success("🔓 1분 복습이 만료되어 타임락이 해제되었습니다! 이제 패자부활전이 가능합니다.")
+        
+        col_retry, col_skip = st.columns(2)
+        with col_retry:
+            if st.button("🔄 이 문제 다시 풀기", type="primary", use_container_width=True):
+                # 점수와 상태를 초기화하여 아이가 다시 도전할 수 있게 리셋
+                active_state["stage"] = "solving"
+                active_state["mistakes"] = 0
+                active_state["wrong_para_warning"] = False
+                active_state["result"] = "진행 중 ⏳"
+                active_state["lockout_done"] = False
+                st.rerun()
+        with col_skip:
+            if current_idx < len(QUIZ_DATA) - 1:
+                if st.button("다음 문제로 그냥 넘어가기 ➡️", use_container_width=True):
+                    go_next()
+                    st.rerun()
 
     # --- [🎉 미션 성공 완료 단계] ---
     if active_state["stage"] == "done":
-        st.success(f"🎉 미션 완료! 안전하게 대피했습니다. ({active_state['result']})")
+        st.success(f"🎉 미션 완료! 안전하게 탈출했습니다. ({active_state['result']})")
         if current_idx < len(QUIZ_DATA) - 1:
             st.button("다음 문제로 넘어가기 ➡️", on_click=go_next)
 
-    # --- [🖨️ 전원 완료 시 독립된 최종 인쇄 버튼] ---
+    # --- [🖨️ 모든 훈련 완수 시 등장하는 성적표 버튼] ---
     if all_completed:
         st.write("")
         st.markdown("---")
