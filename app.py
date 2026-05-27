@@ -31,15 +31,16 @@ if "quiz_state" not in st.session_state:
         q_id: {"stage": "solving", "wrong_para_warning": False, "result": "진행 중 ⏳"} for q_id in QUIZ_DATA.keys()
     }
 if "active_tab" not in st.session_state:
-    st.session_state.active_tab = 0  # 0~6 인덱스
+    st.session_state.active_tab = 0
+if "print_view" not in st.session_state:
+    st.session_state.print_view = False
 
 def go_next():
     if st.session_state.active_tab < len(QUIZ_DATA) - 1:
         st.session_state.active_tab += 1
 
-# [PDF 인쇄용 화면 로직]
-if st.sidebar.button("🖨️ 최종 성적표 인쇄하기"):
-    st.balloons()
+# --- [🖨️ PDF 인쇄용 전용 화면 모드] ---
+if st.session_state.print_view:
     st.header("📋 국어 독해 훈련 결과 성적표")
     st.subheader("단원: 01. 곰과 두 친구")
     
@@ -53,21 +54,27 @@ if st.sidebar.button("🖨️ 최종 성적표 인쇄하기"):
     
     st.table(data)
     st.info("💡 팁: 브라우저 메뉴의 '인쇄' 또는 'Ctrl+P'를 누른 후 'PDF로 저장'을 선택하세요.")
-    if st.button("돌아가기"):
+    
+    if st.button("⬅️ 학습 화면으로 돌아가기"):
+        st.session_state.print_view = False
         st.rerun()
     st.stop()
 
+
+# --- [💻 일반 학습 화면 모드] ---
 st.title("🚀 국어 독해 논리력 단계별 완전학습")
 st.caption("문제를 틀리면 힌트 문단을 스스로 찾아야 합니다. 모든 문제를 통과하고 성적표를 출력해 보세요!")
 
 col1, col2 = st.columns([1, 1])
 
-# 현재 활성화된 탭 기반 문제 번호
+# 현재 활성화된 문제 추출
 q_list = list(QUIZ_DATA.keys())
-current_q_id = q_list[st.session_state.active_tab]
+current_idx = st.session_state.active_tab
+current_q_id = q_list[current_idx]
 active_state = st.session_state.quiz_state[current_q_id]
+q_info = QUIZ_DATA[current_q_id]
 
-# 형광펜 라이브 하이라이트
+# 형광펜 라이브 하이라이트 알고리즘
 highlight_para_num = None
 if active_state["stage"] == "step1":
     sb_value = st.session_state.get(f"sb_{current_q_id}")
@@ -75,6 +82,7 @@ if active_state["stage"] == "step1":
 elif active_state["stage"] in ["step2", "step3"]:
     highlight_para_num = QUIZ_DATA[current_q_id]["correct_para"]
 
+# [왼쪽 열: 지문 영역]
 with col1:
     st.subheader("📜 01. 곰과 두 친구 (본문)")
     story_html = ""
@@ -86,68 +94,70 @@ with col1:
             story_html += f"<div style='padding: 12px; margin-bottom: 10px; font-size:16px; color:#333;'><b>[{p_num}문단]</b> {para}</div>"
     st.markdown(f"<div style='background-color: #F8F9FA; padding: 15px; border-radius: 10px; border: 1px solid #E0E0E0;'>{story_html}</div>", unsafe_allow_html=True)
 
+# [오른쪽 열: 문제 영역]
 with col2:
     st.subheader("✏️ 훈련 미션 영역")
-    
-    # 세션 상태와 연동된 탭 (st.tabs 대신 인덱스 기반의 수동 탭 구현 효과)
-    current_idx = st.session_state.active_tab
-    q_id = q_list[current_idx]
-    state = st.session_state.quiz_state[q_id]
-    q_info = QUIZ_DATA[q_id]
-
     st.markdown(f"### 📍 {q_info['question']}")
     st.markdown("---")
 
-    # [단계별 로직]
-    if state["stage"] == "solving":
-        choice = st.radio("정답 고르기:", q_info["options"], key=f"s_{q_id}")
-        if st.button("정답 확인", key=f"b_{q_id}"):
+    # [단계별 문제 풀이 제어 인터랙션]
+    if active_state["stage"] == "solving":
+        choice = st.radio("정답 고르기:", q_info["options"], key=f"s_{current_q_id}")
+        if st.button("정답 확인", key=f"b_{current_q_id}"):
             if choice == q_info["answer"]:
-                state["stage"] = "done"; state["result"] = "1차 통과 🥇"
-                st.rerun()
+                active_state["stage"] = "done"; active_state["result"] = "1차 통과 🥇"
             else:
-                state["stage"] = "step1"; st.rerun()
+                active_state["stage"] = "step1"
+            st.rerun()
 
-    elif state["stage"] == "step1":
+    elif active_state["stage"] == "step1":
         st.error("❌ 오답입니다. 단서 문단을 찾아보세요.")
         st.markdown("#### 🔍 [Step 1] 힌트 문단 찾기")
-        c_para = st.selectbox("문단 선택:", [f"{i}문단" for i in range(1, len(PARAGRAPHS)+1)], key=f"sb_{q_id}")
-        if state["wrong_para_warning"]: st.warning("⚠️ 다시 생각해보세요! 이 문단에는 단서가 없습니다.")
-        if st.button("문단 확인", key=f"bp_{q_id}"):
+        c_para = st.selectbox("문단 선택:", [f"{i}문단" for i in range(1, len(PARAGRAPHS)+1)], key=f"sb_{current_q_id}")
+        if active_state["wrong_para_warning"]: st.warning("⚠️ 다시 생각해보세요! 이 문단에는 단서가 없습니다.")
+        if st.button("문단 확인", key=f"bp_{current_q_id}"):
             if int(c_para.replace("문단", "")) == q_info["correct_para"]:
-                state["stage"] = "step2"; state["wrong_para_warning"] = False
+                active_state["stage"] = "step2"; active_state["wrong_para_warning"] = False
             else:
-                state["wrong_para_warning"] = True
+                active_state["wrong_para_warning"] = True
             st.rerun()
 
-    elif state["stage"] == "step2":
+    elif active_state["stage"] == "step2":
         st.success(f"🎯 {q_info['correct_para']}문단에서 단서를 찾았습니다!")
         st.markdown("#### 📝 [Step 2] 2차 시도")
-        choice2 = st.radio("다시 고르기:", q_info["options"], key=f"r2_{q_id}")
-        if st.button("2차 확인", key=f"br2_{q_id}"):
+        choice2 = st.radio("다시 고르기:", q_info["options"], key=f"r2_{current_q_id}")
+        if st.button("2차 확인", key=f"br2_{current_q_id}"):
             if choice2 == q_info["answer"]:
-                state["stage"] = "done"; state["result"] = "2차 통과 🥈"
+                active_state["stage"] = "done"; active_state["result"] = "2차 통과 🥈"
             else:
-                state["stage"] = "step3"
+                active_state["stage"] = "step3"
             st.rerun()
 
-    elif state["stage"] == "step3":
+    elif active_state["stage"] == "step3":
         st.error("❌ 마지막 기회입니다.")
         st.markdown("#### 📝 [Step 3] 최종 시도")
-        choice3 = st.radio("다시 고르기:", q_info["options"], key=f"r3_{q_id}")
-        if st.button("3차 확인", key=f"br3_{q_id}"):
+        choice3 = st.radio("다시 고르기:", q_info["options"], key=f"r3_{current_q_id}")
+        if st.button("3차 확인", key=f"br3_{current_q_id}"):
             if choice3 == q_info["answer"]:
-                state["stage"] = "done"; state["result"] = "3차 통과 🥉"
+                active_state["stage"] = "done"; active_state["result"] = "3차 통과 🥉"
             else:
                 st.error("❌ 정답이 아닙니다. 형광펜 문단을 다시 정독해 보세요.")
             st.rerun()
 
-    if state["stage"] == "done":
-        st.success(f"🎉 미션 완료! ({state['result']})")
+    # --- [성공 및 다음 제어 단계] ---
+    if active_state["stage"] == "done":
+        st.success(f"🎉 미션 완료! ({active_state['result']})")
+        
+        # 마지막 전 문제까지는 [다음 문제] 버튼 노출
         if current_idx < len(QUIZ_DATA) - 1:
             st.button("다음 문제로 넘어가기 ➡️", on_click=go_next)
         else:
-            st.info("🏁 마지막 문제까지 모두 완료했습니다! 사이드바에서 성적표를 출력하세요.")
+            # 7번 문제(마지막 문제)까지 완료했을 때만 비로소 인쇄 버튼을 노출!
+            st.balloons()
+            st.info("🏁 축하합니다! 모든 훈련 과제를 끝마쳤습니다.")
+            if st.button("🖨️ 최종 성적표 인쇄하기", type="primary"):
+                st.session_state.print_view = True
+                st.rerun()
 
 # [하단 실시간 성적표]
 st.markdown("---")
