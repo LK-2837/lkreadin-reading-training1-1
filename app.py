@@ -1,10 +1,10 @@
 import streamlit as st
 import time
+import random  # ⭐ 선택지 무작위 셔플을 위한 라이브러리 추가
 
-# 1. 페이지 레이아웃 및 꼼수 방지 CSS 설정
+# 1. 페이지 레이아웃 및 Stop 버튼 숨기기 CSS 설정
 st.set_page_config(layout="wide", page_title="국어 논리력 시한폭탄 훈련")
 
-# ⭐ [핵심 패치] 스트림릿 상단 status widget 내부의 Stop 버튼을 아예 숨겨버리는 CSS 단추
 st.markdown("""
     <style>
     [data-testid="stStatusWidget"] button {
@@ -35,22 +35,42 @@ QUIZ_DATA = {
     7: {"question": "7. 이 이야기의 교훈은 무엇인가요?", "options": ["① 남을 먼저 생각하는 마음을 가져야 한다.", "② 진정한 친구는 어려울 때 도와주는 친구이다.", "③ 무엇이든 꾸준히 노력하면 안 되는 것이 없다.", "④ 조금씩 모으다 보면 언젠가 큰 것이 된다.", "⑤ 어릴 적 습관은 늙어서까지 계속된다."], "answer": "② 진정한 친구는 어려울 때 도와주는 친구이다.", "correct_para": 7}
 }
 
-# 세션 상태 초기화
+# 4. 세션 상태 초기화 및 첫 선택지 무작위 셔플
 if "quiz_state" not in st.session_state:
-    st.session_state.quiz_state = {
-        q_id: {
+    st.session_state.quiz_state = {}
+    for q_id in QUIZ_DATA.keys():
+        # ⭐ 각 문제의 보기 복사 후 무작위로 섞어서 저장
+        shuffled_opts = QUIZ_DATA[q_id]["options"].copy()
+        random.shuffle(shuffled_opts)
+        
+        st.session_state.quiz_state[q_id] = {
             "stage": "solving",       
             "wrong_para_warning": False,
             "result": "진행 중 ⏳",
             "mistakes": 0,
-            "lockout_end_time": None, # ⭐ 절대 시간 비교를 위한 변수 추가
-            "lockout_done": False     
-        } for q_id in QUIZ_DATA.keys()
-    }
+            "lockout_end_time": None, 
+            "lockout_done": False,
+            "shuffled_options": shuffled_opts  # ⭐ 저장된 셔플 보기
+        }
 if "active_tab" not in st.session_state:
     st.session_state.active_tab = 0
 if "print_view" not in st.session_state:
     st.session_state.print_view = False
+
+# ⭐ [새로고침 방지 핵심 철벽 방어선] URL 주소창에서 강제 락 정보 동기화 복구
+for q_id in QUIZ_DATA.keys():
+    param_key = f"lock_{q_id}"
+    if param_key in st.query_params:
+        end_time = float(st.query_params[param_key])
+        if time.time() < end_time:
+            # 새로고침을 해도 주소창 값을 읽어 강제로 타임락방 상태로 원복시킴
+            st.session_state.quiz_state[q_id]["stage"] = "exploded"
+            st.session_state.quiz_state[q_id]["lockout_end_time"] = end_time
+            st.session_state.quiz_state[q_id]["mistakes"] = 3
+            st.session_state.quiz_state[q_id]["result"] = "미션 실패 ❌"
+        else:
+            # 시간이 다 만료되었다면 주소창 파라미터 청소
+            del st.query_params[param_key]
 
 def go_next():
     if st.session_state.active_tab < len(QUIZ_DATA) - 1:
@@ -81,14 +101,12 @@ if st.session_state.print_view:
 # --- [💻 일반 학습 화면 모드] ---
 col1, col2 = st.columns([1, 1])
 
-# 현재 활성화된 문제 추출
-q_list = list(QUIZ_DATA.keys())
 current_idx = st.session_state.active_tab
+q_list = list(QUIZ_DATA.keys())
 current_q_id = q_list[current_idx]
 active_state = st.session_state.quiz_state[current_q_id]
 q_info = QUIZ_DATA[current_q_id]
 
-# 모든 문제를 처리했는지 판정
 all_completed = all(
     st.session_state.quiz_state[qid]["stage"] == "done" or 
     (st.session_state.quiz_state[qid]["stage"] == "exploded" and st.session_state.quiz_state[qid].get("lockout_done", False))
@@ -119,7 +137,6 @@ with col1:
 with col2:
     st.subheader("✏️ 훈련 미션 영역")
     
-    # 실시간 폭탄 게이지 UI
     mistakes = active_state["mistakes"]
     if active_state["stage"] != "exploded":
         if mistakes == 0:
@@ -130,13 +147,13 @@ with col2:
             bomb_bar = "<div style='font-size: 18px; text-align: center; background-color: #FED7D7; padding: 10px; border-radius: 8px; margin-bottom: 15px;'>💣 🟩🟨🟨🟥🟥 🔥 <span style='font-size: 13px; color: #C53030; font-weight: bold;'>(경고! 다음 오답 시 대폭발!)</span></div>"
         st.markdown(bomb_bar, unsafe_allow_html=True)
 
-    # 📍 문제 발문 노출
     if active_state["stage"] != "exploded":
         st.markdown(f"<div style='font-size: 18px; font-weight: bold; color: #1E3A8A; background-color: #EDF2F7; padding: 12px; border-radius: 6px; margin-bottom: 15px;'>📍 {q_info['question']}</div>", unsafe_allow_html=True)
 
     # --- [1차 풀이 단계] ---
     if active_state["stage"] == "solving":
-        choice = st.radio("정답 고르기:", q_info["options"], key=f"s_{current_q_id}")
+        # ⭐ 셔플된 선택지(`active_state["shuffled_options"]`)를 화면에 매핑
+        choice = st.radio("정답 고르기:", active_state["shuffled_options"], key=f"s_{current_q_id}")
         if st.button("정답 확인", key=f"b_{current_q_id}"):
             if choice == q_info["answer"]:
                 active_state["stage"] = "done"; active_state["result"] = "1차 통과 🥇"
@@ -162,7 +179,7 @@ with col2:
     elif active_state["stage"] == "step2":
         st.success(f"🎯 {q_info['correct_para']}문단에서 단서를 확보했습니다!")
         st.markdown("#### 📝 [Step 2] 2차 시도")
-        choice2 = st.radio("다시 고르기:", q_info["options"], key=f"r2_{current_q_id}")
+        choice2 = st.radio("다시 고르기:", active_state["shuffled_options"], key=f"r2_{current_q_id}")
         if st.button("2차 확인", key=f"br2_{current_q_id}"):
             if choice2 == q_info["answer"]:
                 active_state["stage"] = "done"; active_state["result"] = "2차 통과 🥈"
@@ -174,7 +191,7 @@ with col2:
     elif active_state["stage"] == "step3":
         st.error("❌ 2차 시도 실패! 불꽃이 폭탄 바로 앞까지 도달했습니다!")
         st.markdown("#### 📝 [Step 3] 최종 시도 (마지막 탈출 기회)")
-        choice3 = st.radio("다시 고르기:", q_info["options"], key=f"r3_{current_q_id}")
+        choice3 = st.radio("다시 고르기:", active_state["shuffled_options"], key=f"r3_{current_q_id}")
         if st.button("3차 확인", key=f"br3_{current_q_id}"):
             if choice3 == q_info["answer"]:
                 active_state["stage"] = "done"; active_state["result"] = "3차 통과 🥉"
@@ -183,6 +200,8 @@ with col2:
                 active_state["mistakes"] = 3
                 active_state["result"] = "미션 실패 ❌"
                 active_state["lockout_done"] = False
+                # ⭐ [새로고침 방지 패치] 폭탄이 터진 시점에 웹 브라우저 주소창(Query Parameter)에도 만료 시간을 박아버림
+                st.query_params[f"lock_{current_q_id}"] = str(time.time() + 60)
             st.rerun()
 
     # --- [💥 대폭발 및 1분 강제 잠금 타이머 모드] ---
@@ -198,38 +217,43 @@ with col2:
         st.write("")
         
         st.markdown(f"<div style='font-size: 17px; font-weight: bold; color: #4A5568; background-color: #EDF2F7; padding: 12px; border-radius: 6px;'>📍 복습용 발문 고정: {q_info['question']}</div>", unsafe_allow_html=True)
-        st.radio("선택지 복습 구역 (잠금됨):", q_info["options"], key=f"locked_opt_{current_q_id}", disabled=True)
+        st.radio("선택지 복습 구역 (잠금 및 실시간 순서 무작위 변경됨):", active_state["shuffled_options"], key=f"locked_opt_{current_q_id}", disabled=True)
         st.write("")
 
-        # ⭐ [핵심 로직 변경] 처음 터진 시점에 현실 시각 기준 '60초 뒤 미래 시간'을 고정 저장
         if active_state["lockout_end_time"] is None:
             active_state["lockout_end_time"] = time.time() + 60
 
-        # 현실 시계와 실시간 비교 연산
         current_time = time.time()
         remaining = int(active_state["lockout_end_time"] - current_time)
 
         if remaining > 0:
             timer_placeholder = st.empty()
-            timer_placeholder.error(f"⏳ 강제 복습 시스템 작동 중: {remaining}초 동안 다른 버튼이 비활성화됩니다.")
+            timer_placeholder.error(f"⏳ 강제 복습 시스템 작동 중: {remaining}초 동안 새로고침 및 이탈이 차단됩니다.")
             time.sleep(1)
-            st.rerun()  # 1초 주기로 브라우저를 강제 새로고침하여 시간 반영
+            st.rerun()
         else:
             active_state["lockout_done"] = True
+            # 타임아웃 종료 시 주소창의 락 파라미터 자동 정리
+            if f"lock_{current_q_id}" in st.query_params:
+                del st.query_params[f"lock_{current_q_id}"]
 
-        # 🔓 60초가 무사히 지나면 잠금 해제 인터페이스 오픈
         if active_state["lockout_done"]:
             st.success("🔓 1분 복습이 완료되어 타임락이 해제되었습니다!")
             
             col_retry, col_skip = st.columns(2)
             with col_retry:
                 if st.button("🔄 이 문제 다시 풀기", type="primary", use_container_width=True):
+                    # ⭐ [다시 풀기 패치] 패자부활 시 선택지 순서를 또 한 번 무작위로 뒤섞음!
+                    new_shuffled = QUIZ_DATA[current_q_id]["options"].copy()
+                    random.shuffle(new_shuffled)
+                    
                     active_state["stage"] = "solving"
                     active_state["mistakes"] = 0
                     active_state["wrong_para_warning"] = False
                     active_state["result"] = "진행 중 ⏳"
                     active_state["lockout_end_time"] = None
                     active_state["lockout_done"] = False
+                    active_state["shuffled_options"] = new_shuffled
                     st.rerun()
             with col_skip:
                 if current_idx < len(QUIZ_DATA) - 1:
