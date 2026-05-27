@@ -14,7 +14,7 @@ PARAGRAPHS = [
     "이 이야기는 ‘어려울 때 도와주는 친구가 진정한 친구’라는 교훈을 담고 있습니다."
 ]
 
-# 3. 전체 문제 및 문단 매칭 데이터
+# 3. 문제 데이터
 QUIZ_DATA = {
     1: {"question": "1. 절친한 두 친구는 어디를 걸어가고 있었나요?", "options": ["① 정글", "② 광장", "③ 들판", "④ 산길", "⑤ 해변"], "answer": "④ 산길", "correct_para": 1},
     2: {"question": "2. 두 친구는 어떤 사이였나요?", "options": ["① 누가 잘 달리는지 다투는 사이", "② 같은 마을에서 함께 자란 사이", "③ 콩 한 쪽도 나누어 먹는 가까운 사이", "④ 말하지 않아도 서로의 마음을 아는 사이", "⑤ 서로 잘 되는 것을 보면 배가 아픈 사이"], "answer": "③ 콩 한 쪽도 나누어 먹는 가까운 사이", "correct_para": 1},
@@ -28,164 +28,133 @@ QUIZ_DATA = {
 # 세션 상태 초기화
 if "quiz_state" not in st.session_state:
     st.session_state.quiz_state = {
-        q_id: {
-            "stage": "solving",       
-            "wrong_para_warning": False,
-            "result": "진행 중 ⏳"
-        } for q_id in QUIZ_DATA.keys()
+        q_id: {"stage": "solving", "wrong_para_warning": False, "result": "진행 중 ⏳"} for q_id in QUIZ_DATA.keys()
     }
-if "last_active_q" not in st.session_state:
-    st.session_state.last_active_q = 1
+if "active_tab" not in st.session_state:
+    st.session_state.active_tab = 0  # 0~6 인덱스
 
-def update_active_q(q_id):
-    st.session_state.last_active_q = q_id
+def go_next():
+    if st.session_state.active_tab < len(QUIZ_DATA) - 1:
+        st.session_state.active_tab += 1
+
+# [PDF 인쇄용 화면 로직]
+if st.sidebar.button("🖨️ 최종 성적표 인쇄하기"):
+    st.balloons()
+    st.header("📋 국어 독해 훈련 결과 성적표")
+    st.subheader("단원: 01. 곰과 두 친구")
+    
+    total_score = sum(1 for s in st.session_state.quiz_state.values() if "done" in s["stage"])
+    st.write(f"**총 {len(QUIZ_DATA)}문제 중 {total_score}문제 완료**")
+    
+    data = []
+    for q_id, info in QUIZ_DATA.items():
+        res = st.session_state.quiz_state[q_id]["result"]
+        data.append({"문제": f"{q_id}번", "결과": res})
+    
+    st.table(data)
+    st.info("💡 팁: 브라우저 메뉴의 '인쇄' 또는 'Ctrl+P'를 누른 후 'PDF로 저장'을 선택하세요.")
+    if st.button("돌아가기"):
+        st.rerun()
+    st.stop()
 
 st.title("🚀 국어 독해 논리력 단계별 완전학습")
-st.caption("틀린 문제는 스스로 힌트 문단을 찾고 고쳐 풀며 3차 통과를 목표로 도전해 보세요!")
-st.markdown("---")
+st.caption("문제를 틀리면 힌트 문단을 스스로 찾아야 합니다. 모든 문제를 통과하고 성적표를 출력해 보세요!")
 
 col1, col2 = st.columns([1, 1])
 
-active_q = st.session_state.last_active_q
-active_state = st.session_state.quiz_state[active_q]
+# 현재 활성화된 탭 기반 문제 번호
+q_list = list(QUIZ_DATA.keys())
+current_q_id = q_list[st.session_state.active_tab]
+active_state = st.session_state.quiz_state[current_q_id]
 
-# 형광펜 라이브 렌더링 로직
+# 형광펜 라이브 하이라이트
 highlight_para_num = None
 if active_state["stage"] == "step1":
-    sb_value = st.session_state.get(f"sb_{active_q}")
-    if sb_value:
-        highlight_para_num = int(sb_value.replace("문단", ""))
+    sb_value = st.session_state.get(f"sb_{current_q_id}")
+    if sb_value: highlight_para_num = int(sb_value.replace("문단", ""))
 elif active_state["stage"] in ["step2", "step3"]:
-    highlight_para_num = QUIZ_DATA[active_q]["correct_para"]
+    highlight_para_num = QUIZ_DATA[current_q_id]["correct_para"]
 
-# [왼쪽 열: 지문 영역]
 with col1:
     st.subheader("📜 01. 곰과 두 친구 (본문)")
     story_html = ""
     for idx, para in enumerate(PARAGRAPHS):
-        para_num = idx + 1
-        if para_num == highlight_para_num:
-            story_html += f"<div style='background-color: #FFF9C4; padding: 12px; border-radius: 5px; margin-bottom: 10px; border-left: 5px solid #FBC02D; font-size:16px; line-height:1.8; color: black; font-weight: bold;'><b>[{para_num}문단]</b> {para}</div>"
+        p_num = idx + 1
+        if p_num == highlight_para_num:
+            story_html += f"<div style='background-color: #FFF9C4; padding: 12px; border-radius: 5px; margin-bottom: 10px; border-left: 5px solid #FBC02D; font-size:16px; color: black; font-weight: bold;'><b>[{p_num}문단]</b> {para}</div>"
         else:
-            story_html += f"<div style='padding: 12px; margin-bottom: 10px; font-size:16px; line-height:1.8; color:#333333;'><b>[{para_num}문단]</b> {para}</div>"
-            
+            story_html += f"<div style='padding: 12px; margin-bottom: 10px; font-size:16px; color:#333;'><b>[{p_num}문단]</b> {para}</div>"
     st.markdown(f"<div style='background-color: #F8F9FA; padding: 15px; border-radius: 10px; border: 1px solid #E0E0E0;'>{story_html}</div>", unsafe_allow_html=True)
 
-# [오른쪽 열: 문제 영역]
 with col2:
-    st.subheader("✏️ 훈련 미션 단원")
-    tabs = st.tabs([f"{i}번 문제" for i in QUIZ_DATA.keys()])
+    st.subheader("✏️ 훈련 미션 영역")
     
-    for idx, (q_id, q_info) in enumerate(QUIZ_DATA.items()):
-        with tabs[idx]:
-            state = st.session_state.quiz_state[q_id]
-            
-            # ⭐ [핵심 패치] 문제 발문을 탭 최상단에 고정하여 어느 단계에서든 상시 노출되게 함
-            st.markdown(f"### 📍 {q_info['question']}")
-            st.markdown("---")
-            
-            # --- [1차 풀이 단계] ---
-            if state["stage"] == "solving":
-                user_choice = st.radio("정답을 고르세요:", q_info["options"], key=f"select_{q_id}", on_change=update_active_q, args=(q_id,))
-                
-                if st.button("정답 확인", key=f"btn_solve_{q_id}"):
-                    update_active_q(q_id)
-                    if user_choice == q_info["answer"]:
-                        state["stage"] = "done"
-                        state["result"] = "1차 통과 🥇"
-                        st.rerun()
-                    else:
-                        state["stage"] = "step1"
-                        st.rerun()
-            
-            # --- [Step 1: 힌트 문단 찾기 단계] ---
-            elif state["stage"] == "step1":
-                st.error("❌ 1차 시도 오답입니다. 발문을 다시 읽고 힌트 구역을 조율해 보세요.")
-                st.markdown("#### 🔍 [Step 1] 힌트 문단 찾기 미션")
-                st.info("오른쪽에서 문단을 바꾸면 왼쪽에 형광펜이 실시간으로 동기화됩니다.")
-                
-                chosen_para = st.selectbox(
-                    "이 문제의 핵심 단서가 들어있는 문단 선택:", 
-                    options=[f"{i}문단" for i in range(1, len(PARAGRAPHS)+1)], 
-                    key=f"sb_{q_id}",
-                    on_change=update_active_q,
-                    args=(q_id,)
-                )
-                
-                if state["wrong_para_warning"]:
-                    st.warning("⚠️ 다시 생각해보세요! 선택한 문단에는 정답의 결정적 단서가 없습니다.")
-                
-                if st.button("문단 확인", key=f"btn_para_{q_id}"):
-                    update_active_q(q_id)
-                    para_int = int(chosen_para.replace("문단", ""))
-                    if para_int == q_info["correct_para"]:
-                        state["stage"] = "step2"
-                        state["wrong_para_warning"] = False
-                        st.rerun()
-                    else:
-                        state["wrong_para_warning"] = True
-                        st.rerun()
-            
-            # --- [Step 2: 2차 풀이 단계] ---
-            elif state["stage"] == "step2":
-                st.success(f"🎯 대단해요! {q_info['correct_para']}문단에서 정확히 단서를 포착했습니다.")
-                st.markdown("#### 📝 [Step 2] 2차 시도 - 정답 고치기")
-                
-                user_choice_2 = st.radio("정답을 다시 고르세요:", q_info["options"], key=f"retry2_{q_id}", on_change=update_active_q, args=(q_id,))
-                
-                if st.button("2차 확인", key=f"btn_retry2_{q_id}"):
-                    update_active_q(q_id)
-                    if user_choice_2 == q_info["answer"]:
-                        state["stage"] = "done"
-                        state["result"] = "2차 통과 🥈"
-                        st.rerun()
-                    else:
-                        state["stage"] = "step3"
-                        st.rerun()
-            
-            # --- [Step 3: 3차 풀이 단계] ---
-            elif state["stage"] == "step3":
-                st.error("❌ 2차 시도도 아쉽게 틀렸습니다. 마지막 집중력을 발휘해 보세요.")
-                st.markdown("#### 📝 [Step 3] 3차 시도 - 최종 기회")
-                
-                user_choice_3 = st.radio("정답을 다시 고르세요:", q_info["options"], key=f"retry3_{q_id}", on_change=update_active_q, args=(q_id,))
-                
-                if st.button("3차 확인", key=f"btn_retry3_{q_id}"):
-                    update_active_q(q_id)
-                    if user_choice_3 == q_info["answer"]:
-                        state["stage"] = "done"
-                        state["result"] = "3차 통과 🥉"
-                        st.rerun()
-                    else:
-                        st.error("❌ 아직 오답입니다. 형광펜 문단을 정독하며 깊이 고민해 봅시다.")
+    # 세션 상태와 연동된 탭 (st.tabs 대신 인덱스 기반의 수동 탭 구현 효과)
+    current_idx = st.session_state.active_tab
+    q_id = q_list[current_idx]
+    state = st.session_state.quiz_state[q_id]
+    q_info = QUIZ_DATA[q_id]
 
-            # --- [최종 완료 단계] ---
-            elif state["stage"] == "done":
-                st.success(f"🎉 미션 완료! 이 문제는 [{state['result']}]로 클리어 되었습니다.")
+    st.markdown(f"### 📍 {q_info['question']}")
+    st.markdown("---")
 
-# 4. 하단 실시간 성적표 대시보드
-st.markdown("<br><br>", unsafe_allow_html=True)
-st.markdown("---")
-st.header("📊 실시간 학습 성적표")
+    # [단계별 로직]
+    if state["stage"] == "solving":
+        choice = st.radio("정답 고르기:", q_info["options"], key=f"s_{q_id}")
+        if st.button("정답 확인", key=f"b_{q_id}"):
+            if choice == q_info["answer"]:
+                state["stage"] = "done"; state["result"] = "1차 통과 🥇"
+                st.rerun()
+            else:
+                state["stage"] = "step1"; st.rerun()
 
-report_cols = st.columns(len(QUIZ_DATA))
-for idx, q_id in enumerate(QUIZ_DATA.keys()):
-    with report_cols[idx]:
-        q_res = st.session_state.quiz_state[q_id]["result"]
-        
-        if "1차" in q_res:
-            bg_color = "#E8F5E9"; text_color = "#2E7D32"
-        elif "2차" in q_res:
-            bg_color = "#FFF3E0"; text_color = "#EF6C00"
-        elif "3차" in q_res:
-            bg_color = "#E1F5FE"; text_color = "#0277BD"
+    elif state["stage"] == "step1":
+        st.error("❌ 오답입니다. 단서 문단을 찾아보세요.")
+        st.markdown("#### 🔍 [Step 1] 힌트 문단 찾기")
+        c_para = st.selectbox("문단 선택:", [f"{i}문단" for i in range(1, len(PARAGRAPHS)+1)], key=f"sb_{q_id}")
+        if state["wrong_para_warning"]: st.warning("⚠️ 다시 생각해보세요! 이 문단에는 단서가 없습니다.")
+        if st.button("문단 확인", key=f"bp_{q_id}"):
+            if int(c_para.replace("문단", "")) == q_info["correct_para"]:
+                state["stage"] = "step2"; state["wrong_para_warning"] = False
+            else:
+                state["wrong_para_warning"] = True
+            st.rerun()
+
+    elif state["stage"] == "step2":
+        st.success(f"🎯 {q_info['correct_para']}문단에서 단서를 찾았습니다!")
+        st.markdown("#### 📝 [Step 2] 2차 시도")
+        choice2 = st.radio("다시 고르기:", q_info["options"], key=f"r2_{q_id}")
+        if st.button("2차 확인", key=f"br2_{q_id}"):
+            if choice2 == q_info["answer"]:
+                state["stage"] = "done"; state["result"] = "2차 통과 🥈"
+            else:
+                state["stage"] = "step3"
+            st.rerun()
+
+    elif state["stage"] == "step3":
+        st.error("❌ 마지막 기회입니다.")
+        st.markdown("#### 📝 [Step 3] 최종 시도")
+        choice3 = st.radio("다시 고르기:", q_info["options"], key=f"r3_{q_id}")
+        if st.button("3차 확인", key=f"br3_{q_id}"):
+            if choice3 == q_info["answer"]:
+                state["stage"] = "done"; state["result"] = "3차 통과 🥉"
+            else:
+                st.error("❌ 정답이 아닙니다. 형광펜 문단을 다시 정독해 보세요.")
+            st.rerun()
+
+    if state["stage"] == "done":
+        st.success(f"🎉 미션 완료! ({state['result']})")
+        if current_idx < len(QUIZ_DATA) - 1:
+            st.button("다음 문제로 넘어가기 ➡️", on_click=go_next)
         else:
-            bg_color = "#F5F5F5"; text_color = "#616161"
-            
-        st.markdown(
-            f"<div style='background-color: {bg_color}; padding: 15px; border-radius: 8px; text-align: center; border: 1px solid {text_color};'>"
-            f"<p style='margin: 0; font-size: 14px; color: #555555; font-weight: bold;'>{q_id}번 문제</p>"
-            f"<p style='margin: 5px 0 0 0; font-size: 16px; color: {text_color}; font-weight: bold;'>{q_res}</p>"
-            f"</div>",
-            unsafe_allow_html=True
-        )
+            st.info("🏁 마지막 문제까지 모두 완료했습니다! 사이드바에서 성적표를 출력하세요.")
+
+# [하단 실시간 성적표]
+st.markdown("---")
+st.subheader("📊 학습 현황")
+cols = st.columns(len(QUIZ_DATA))
+for i, qid in enumerate(QUIZ_DATA.keys()):
+    with cols[i]:
+        res = st.session_state.quiz_state[qid]["result"]
+        color = "#2E7D32" if "1차" in res else ("#EF6C00" if "2차" in res else ("#0277BD" if "3차" in res else "#616161"))
+        st.markdown(f"<div style='text-align:center; border:1px solid {color}; border-radius:5px; padding:5px; font-size:12px; font-weight:bold; color:{color};'>{qid}번<br>{res}</div>", unsafe_allow_html=True)
