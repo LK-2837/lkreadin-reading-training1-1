@@ -74,6 +74,9 @@ current_q_id = q_list[current_idx]
 active_state = st.session_state.quiz_state[current_q_id]
 q_info = QUIZ_DATA[current_q_id]
 
+# 모든 문제를 다 풀었는지 체크하는 판정선
+all_done = all(st.session_state.quiz_state[qid]["stage"] == "done" for qid in QUIZ_DATA.keys())
+
 # 형광펜 라이브 하이라이트 알고리즘
 highlight_para_num = None
 if active_state["stage"] == "step1":
@@ -97,8 +100,9 @@ with col1:
 # [오른쪽 열: 문제 영역]
 with col2:
     st.subheader("✏️ 훈련 미션 영역")
-    st.markdown(f"### 📍 {q_info['question']}")
-    st.markdown("---")
+    
+    # ⭐ [피드백 반영] 발문 디자인 및 글자 크기 축소 패치 (기존 H3 대형 폰트 -> 가독성 좋은 18px 폰트)
+    st.markdown(f"<div style='font-size: 18px; font-weight: bold; color: #1E3A8A; background-color: #EDF2F7; padding: 12px; border-radius: 6px; margin-bottom: 15px;'>📍 {q_info['question']}</div>", unsafe_allow_html=True)
 
     # [단계별 문제 풀이 제어 인터랙션]
     if active_state["stage"] == "solving":
@@ -106,6 +110,9 @@ with col2:
         if st.button("정답 확인", key=f"b_{current_q_id}"):
             if choice == q_info["answer"]:
                 active_state["stage"] = "done"; active_state["result"] = "1차 통과 🥇"
+                # 만약 1차 통과했는데 그게 마지막 문제라면 축하 풍선 생성
+                if all(st.session_state.quiz_state[qid]["stage"] == "done" for qid in QUIZ_DATA.keys()):
+                    st.balloons()
             else:
                 active_state["stage"] = "step1"
             st.rerun()
@@ -129,6 +136,8 @@ with col2:
         if st.button("2차 확인", key=f"br2_{current_q_id}"):
             if choice2 == q_info["answer"]:
                 active_state["stage"] = "done"; active_state["result"] = "2차 통과 🥈"
+                if all(st.session_state.quiz_state[qid]["stage"] == "done" for qid in QUIZ_DATA.keys()):
+                    st.balloons()
             else:
                 active_state["stage"] = "step3"
             st.rerun()
@@ -140,6 +149,8 @@ with col2:
         if st.button("3차 확인", key=f"br3_{current_q_id}"):
             if choice3 == q_info["answer"]:
                 active_state["stage"] = "done"; active_state["result"] = "3차 통과 🥉"
+                if all(st.session_state.quiz_state[qid]["stage"] == "done" for qid in QUIZ_DATA.keys()):
+                    st.balloons()
             else:
                 st.error("❌ 정답이 아닙니다. 형광펜 문단을 다시 정독해 보세요.")
             st.rerun()
@@ -147,17 +158,17 @@ with col2:
     # --- [성공 및 다음 제어 단계] ---
     if active_state["stage"] == "done":
         st.success(f"🎉 미션 완료! ({active_state['result']})")
-        
-        # 마지막 전 문제까지는 [다음 문제] 버튼 노출
         if current_idx < len(QUIZ_DATA) - 1:
             st.button("다음 문제로 넘어가기 ➡️", on_click=go_next)
-        else:
-            # 7번 문제(마지막 문제)까지 완료했을 때만 비로소 인쇄 버튼을 노출!
-            st.balloons()
-            st.info("🏁 축하합니다! 모든 훈련 과제를 끝마쳤습니다.")
-            if st.button("🖨️ 최종 성적표 인쇄하기", type="primary"):
-                st.session_state.print_view = True
-                st.rerun()
+
+    # ⭐ [피드백 반영] 모든 문제를 완벽하게 클리어했을 때만 문제창 최하단에 분리되어 등장하는 전용 인쇄 버튼 영역
+    if all_done:
+        st.write("")
+        st.markdown("---")
+        st.info("🏁 축하합니다! 모든 훈련 과제를 성공적으로 마쳤습니다. 아래 버튼을 눌러 결과 보고서를 출력하세요.")
+        if st.button("🖨️ 최종 성적표 인쇄하기 (PDF 저장)", type="primary", use_container_width=True):
+            st.session_state.print_view = True
+            st.rerun()
 
 # [하단 실시간 성적표]
 st.markdown("---")
