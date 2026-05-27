@@ -1,7 +1,7 @@
 import streamlit as st
 
 # 1. 페이지 레이아웃 설정
-st.set_page_config(layout="wide", page_title="국어 논리력 추적 완전학습")
+st.set_page_config(layout="wide", page_title="국어 논리력 시한폭탄 훈련")
 
 # 2. 본문 문단별 데이터
 PARAGRAPHS = [
@@ -28,7 +28,12 @@ QUIZ_DATA = {
 # 세션 상태 초기화
 if "quiz_state" not in st.session_state:
     st.session_state.quiz_state = {
-        q_id: {"stage": "solving", "wrong_para_warning": False, "result": "진행 중 ⏳"} for q_id in QUIZ_DATA.keys()
+        q_id: {
+            "stage": "solving",       # solving -> step1 -> step2 -> step3 -> exploded / done
+            "wrong_para_warning": False,
+            "result": "진행 중 ⏳",
+            "mistakes": 0             # 폭탄용 오답 카운트
+        } for q_id in QUIZ_DATA.keys()
     }
 if "active_tab" not in st.session_state:
     st.session_state.active_tab = 0
@@ -44,8 +49,8 @@ if st.session_state.print_view:
     st.header("📋 국어 독해 훈련 결과 성적표")
     st.subheader("단원: 01. 곰과 두 친구")
     
-    total_score = sum(1 for s in st.session_state.quiz_state.values() if "done" in s["stage"])
-    st.write(f"**총 {len(QUIZ_DATA)}문제 중 {total_score}문제 완료**")
+    completed_tasks = sum(1 for s in st.session_state.quiz_state.values() if s["stage"] in ["done", "exploded"])
+    st.write(f"**총 {len(QUIZ_DATA)}문제 중 {completed_tasks}문제 완료**")
     
     data = []
     for q_id, info in QUIZ_DATA.items():
@@ -62,8 +67,8 @@ if st.session_state.print_view:
 
 
 # --- [💻 일반 학습 화면 모드] ---
-st.title("🚀 국어 독해 논리력 단계별 완전학습")
-st.caption("문제를 틀리면 힌트 문단을 스스로 찾아야 합니다. 모든 문제를 통과하고 성적표를 출력해 보세요!")
+st.title("🚀 국어 독해 논리력 시한폭탄 훈련")
+st.caption("문제를 틀릴 때마다 불꽃이 폭탄과 가까워집니다! 폭발하기 전에 단서를 추적하세요!")
 
 col1, col2 = st.columns([1, 1])
 
@@ -74,8 +79,8 @@ current_q_id = q_list[current_idx]
 active_state = st.session_state.quiz_state[current_q_id]
 q_info = QUIZ_DATA[current_q_id]
 
-# 모든 문제를 다 풀었는지 체크하는 판정선
-all_done = all(st.session_state.quiz_state[qid]["stage"] == "done" for qid in QUIZ_DATA.keys())
+# 모든 문제를 처리했는지 판정 (성공했거나 혹은 터졌거나 둘 다 완료로 간주)
+all_completed = all(st.session_state.quiz_state[qid]["stage"] in ["done", "exploded"] for qid in QUIZ_DATA.keys())
 
 # 형광펜 라이브 하이라이트 알고리즘
 highlight_para_num = None
@@ -97,31 +102,45 @@ with col1:
             story_html += f"<div style='padding: 12px; margin-bottom: 10px; font-size:16px; color:#333;'><b>[{p_num}문단]</b> {para}</div>"
     st.markdown(f"<div style='background-color: #F8F9FA; padding: 15px; border-radius: 10px; border: 1px solid #E0E0E0;'>{story_html}</div>", unsafe_allow_html=True)
 
-# [오른쪽 열: 문제 영역]
+# [오른쪽 열: 문제 및 폭탄 게이지 영역]
 with col2:
     st.subheader("✏️ 훈련 미션 영역")
     
-    # ⭐ [피드백 반영] 발문 디자인 및 글자 크기 축소 패치 (기존 H3 대형 폰트 -> 가독성 좋은 18px 폰트)
-    st.markdown(f"<div style='font-size: 18px; font-weight: bold; color: #1E3A8A; background-color: #EDF2F7; padding: 12px; border-radius: 6px; margin-bottom: 15px;'>📍 {q_info['question']}</div>", unsafe_allow_html=True)
+    # 💣 [실시간 폭탄 게이지 UI 렌더링 엔진]
+    mistakes = active_state["mistakes"]
+    if active_state["stage"] != "exploded":
+        if mistakes == 0:
+            bomb_bar = "<div style='font-size: 18px; text-align: center; background-color: #E2E8F0; padding: 10px; border-radius: 8px; margin-bottom: 15px;'>💣 🟩🟩🟩🟩🟩 🔥 <span style='font-size: 13px; color: #4A5568;'>(안전 상태)</span></div>"
+        elif mistakes == 1:
+            bomb_bar = "<div style='font-size: 18px; text-align: center; background-color: #FEEBC8; padding: 10px; border-radius: 8px; margin-bottom: 15px;'>💣 🟩🟩🟩🟨🟨 🔥 <span style='font-size: 13px; color: #C05621; font-weight: bold;'>(치이익- 불꽃이 타들어 갑니다!)</span></div>"
+        elif mistakes == 2:
+            bomb_bar = "<div style='font-size: 18px; text-align: center; background-color: #FED7D7; padding: 10px; border-radius: 8px; margin-bottom: 15px;'>💣 🟩🟨🟨🟥🟥 🔥 <span style='font-size: 13px; color: #C53030; font-weight: bold;'>(경고! 다음 오답 시 대폭발!)</span></div>"
+        st.markdown(bomb_bar, unsafe_allow_html=True)
 
-    # [단계별 문제 풀이 제어 인터랙션]
+    # 📍 문제 발문 노출 (크기 18px 축소 반영)
+    if active_state["stage"] != "exploded":
+        st.markdown(f"<div style='font-size: 18px; font-weight: bold; color: #1E3A8A; background-color: #EDF2F7; padding: 12px; border-radius: 6px; margin-bottom: 15px;'>📍 {q_info['question']}</div>", unsafe_allow_html=True)
+
+    # --- [1차 풀이 단계] ---
     if active_state["stage"] == "solving":
         choice = st.radio("정답 고르기:", q_info["options"], key=f"s_{current_q_id}")
         if st.button("정답 확인", key=f"b_{current_q_id}"):
             if choice == q_info["answer"]:
                 active_state["stage"] = "done"; active_state["result"] = "1차 통과 🥇"
-                # 만약 1차 통과했는데 그게 마지막 문제라면 축하 풍선 생성
-                if all(st.session_state.quiz_state[qid]["stage"] == "done" for qid in QUIZ_DATA.keys()):
-                    st.balloons()
             else:
                 active_state["stage"] = "step1"
+                active_state["mistakes"] = 1 # 첫 번째 불꽃 전진
             st.rerun()
 
+    # --- [Step 1: 힌트 문단 찾기 단계] ---
     elif active_state["stage"] == "step1":
-        st.error("❌ 오답입니다. 단서 문단을 찾아보세요.")
-        st.markdown("#### 🔍 [Step 1] 힌트 문단 찾기")
-        c_para = st.selectbox("문단 선택:", [f"{i}문단" for i in range(1, len(PARAGRAPHS)+1)], key=f"sb_{current_q_id}")
-        if active_state["wrong_para_warning"]: st.warning("⚠️ 다시 생각해보세요! 이 문단에는 단서가 없습니다.")
+        st.error("❌ 1차 시도 오답입니다. 폭탄이 작동하기 시작했습니다!")
+        st.markdown("#### 🔍 [Step 1] 힌트 문단 찾기 미션")
+        c_para = st.selectbox("단서가 있는 문단 선택:", [f"{i}문단" for i in range(1, len(PARAGRAPHS)+1)], key=f"sb_{current_q_id}")
+        
+        if active_state["wrong_para_warning"]: 
+            st.markdown("<div style='color: #C53030; font-weight:bold; margin-bottom:10px;'>⚠️ 다시 생각해보세요! 이 문단에는 단서가 없습니다.</div>", unsafe_allow_html=True)
+            
         if st.button("문단 확인", key=f"bp_{current_q_id}"):
             if int(c_para.replace("문단", "")) == q_info["correct_para"]:
                 active_state["stage"] = "step2"; active_state["wrong_para_warning"] = False
@@ -129,53 +148,78 @@ with col2:
                 active_state["wrong_para_warning"] = True
             st.rerun()
 
+    # --- [Step 2: 2차 풀이 단계] ---
     elif active_state["stage"] == "step2":
-        st.success(f"🎯 {q_info['correct_para']}문단에서 단서를 찾았습니다!")
+        st.success(f"🎯 {q_info['correct_para']}문단에서 단서를 확보했습니다!")
         st.markdown("#### 📝 [Step 2] 2차 시도")
         choice2 = st.radio("다시 고르기:", q_info["options"], key=f"r2_{current_q_id}")
         if st.button("2차 확인", key=f"br2_{current_q_id}"):
             if choice2 == q_info["answer"]:
                 active_state["stage"] = "done"; active_state["result"] = "2차 통과 🥈"
-                if all(st.session_state.quiz_state[qid]["stage"] == "done" for qid in QUIZ_DATA.keys()):
-                    st.balloons()
             else:
                 active_state["stage"] = "step3"
+                active_state["mistakes"] = 2 # 두 번째 불꽃 바짝 전진
             st.rerun()
 
+    # --- [Step 3: 3차 풀이 단계] ---
     elif active_state["stage"] == "step3":
-        st.error("❌ 마지막 기회입니다.")
-        st.markdown("#### 📝 [Step 3] 최종 시도")
+        st.error("❌ 2차 시도 실패! 불꽃이 폭탄 바로 앞까지 도달했습니다!")
+        st.markdown("#### 📝 [Step 3] 최종 시도 (마지막 탈출 기회)")
         choice3 = st.radio("다시 고르기:", q_info["options"], key=f"r3_{current_q_id}")
         if st.button("3차 확인", key=f"br3_{current_q_id}"):
             if choice3 == q_info["answer"]:
                 active_state["stage"] = "done"; active_state["result"] = "3차 통과 🥉"
-                if all(st.session_state.quiz_state[qid]["stage"] == "done" for qid in QUIZ_DATA.keys()):
-                    st.balloons()
             else:
-                st.error("❌ 정답이 아닙니다. 형광펜 문단을 다시 정독해 보세요.")
+                # 💥 3차 최종 오답 발생: 폭탄 대폭발 모드 진입
+                active_state["stage"] = "exploded"
+                active_state["mistakes"] = 3
+                active_state["result"] = "미션 실패 ❌"
             st.rerun()
 
-    # --- [성공 및 다음 제어 단계] ---
-    if active_state["stage"] == "done":
-        st.success(f"🎉 미션 완료! ({active_state['result']})")
+    # --- [💥 대폭발 화면 처리 모드] ---
+    elif active_state["stage"] == "exploded":
+        st.markdown(
+            "<div style='background-color: #742A2A; color: #FFF5F5; padding: 30px; border-radius: 12px; text-align: center; border: 4px solid #E53E3E; box-shadow: 0px 4px 15px rgba(229, 62, 62, 0.5);'>"
+            "<h1 style='margin: 0; font-size: 36px;'>💥 콰광!!! 대폭발!!! 💥</h1>"
+            "<p style='font-size: 20px; font-weight: bold; margin-top: 15px; color: #FEB2B2;'>미션 실패! 폭탄이 터졌습니다. 😭</p>"
+            "<p style='font-size: 14px; color: #E2E8F0;'>단서를 놓쳐 탈출에 실패했습니다. 다음 문제에서 만회해 보세요!</p>"
+            "</div>",
+            unsafe_allow_html=True
+        )
+        st.write("")
         if current_idx < len(QUIZ_DATA) - 1:
             st.button("다음 문제로 넘어가기 ➡️", on_click=go_next)
 
-    # ⭐ [피드백 반영] 모든 문제를 완벽하게 클리어했을 때만 문제창 최하단에 분리되어 등장하는 전용 인쇄 버튼 영역
-    if all_done:
+    # --- [🎉 미션 성공 완료 단계] ---
+    if active_state["stage"] == "done":
+        st.success(f"🎉 미션 완료! 안전하게 대피했습니다. ({active_state['result']})")
+        if current_idx < len(QUIZ_DATA) - 1:
+            st.button("다음 문제로 넘어가기 ➡️", on_click=go_next)
+
+    # --- [🖨️ 전원 완료 시 독립된 최종 인쇄 버튼] ---
+    if all_completed:
         st.write("")
         st.markdown("---")
-        st.info("🏁 축하합니다! 모든 훈련 과제를 성공적으로 마쳤습니다. 아래 버튼을 눌러 결과 보고서를 출력하세요.")
+        st.info("🏁 모든 훈련 과제가 종결되었습니다. 아래 버튼을 눌러 최종 보고서를 출력하세요.")
         if st.button("🖨️ 최종 성적표 인쇄하기 (PDF 저장)", type="primary", use_container_width=True):
             st.session_state.print_view = True
             st.rerun()
 
-# [하단 실시간 성적표]
+# [하단 실시간 성적표 현황판]
 st.markdown("---")
 st.subheader("📊 학습 현황")
 cols = st.columns(len(QUIZ_DATA))
 for i, qid in enumerate(QUIZ_DATA.keys()):
     with cols[i]:
         res = st.session_state.quiz_state[qid]["result"]
-        color = "#2E7D32" if "1차" in res else ("#EF6C00" if "2차" in res else ("#0277BD" if "3차" in res else "#616161"))
-        st.markdown(f"<div style='text-align:center; border:1px solid {color}; border-radius:5px; padding:5px; font-size:12px; font-weight:bold; color:{color};'>{qid}번<br>{res}</div>", unsafe_allow_html=True)
+        if "1차" in res:
+            color = "#2E7D32"; bg = "#E8F5E9"
+        elif "2차" in res:
+            color = "#EF6C00"; bg = "#FFF3E0"
+        elif "3차" in res:
+            color = "#0277BD"; bg = "#E1F5FE"
+        elif "실패" in res:
+            color = "#C53030"; bg = "#FFEBEE"
+        else:
+            color = "#616161"; bg = "#F5F5F5"
+        st.markdown(f"<div style='text-align:center; border:1px solid {color}; background-color: {bg}; border-radius:5px; padding:8px; font-size:12px; font-weight:bold; color:{color};'>{qid}번<br>{res}</div>", unsafe_allow_html=True)
