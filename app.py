@@ -1,8 +1,17 @@
 import streamlit as st
-import time  # ⭐ 카운트다운 초시계를 위한 라이브러리 추가
+import time
 
-# 1. 페이지 레이아웃 설정
+# 1. 페이지 레이아웃 및 꼼수 방지 CSS 설정
 st.set_page_config(layout="wide", page_title="국어 논리력 시한폭탄 훈련")
+
+# ⭐ [핵심 패치] 스트림릿 상단 status widget 내부의 Stop 버튼을 아예 숨겨버리는 CSS 단추
+st.markdown("""
+    <style>
+    [data-testid="stStatusWidget"] button {
+        display: none !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 # 2. 본문 문단별 데이터
 PARAGRAPHS = [
@@ -34,7 +43,8 @@ if "quiz_state" not in st.session_state:
             "wrong_para_warning": False,
             "result": "진행 중 ⏳",
             "mistakes": 0,
-            "lockout_done": False     # ⭐ 1분 타임락 완료 여부 플래그
+            "lockout_end_time": None, # ⭐ 절대 시간 비교를 위한 변수 추가
+            "lockout_done": False     
         } for q_id in QUIZ_DATA.keys()
     }
 if "active_tab" not in st.session_state:
@@ -69,9 +79,6 @@ if st.session_state.print_view:
 
 
 # --- [💻 일반 학습 화면 모드] ---
-st.title("🚀 국어 독해 논리력 시한폭탄 훈련")
-st.caption("문제를 틀릴 때마다 불꽃이 폭탄과 가까워집니다! 폭발하면 1분간 화면이 잠기니 주의하세요!")
-
 col1, col2 = st.columns([1, 1])
 
 # 현재 활성화된 문제 추출
@@ -81,14 +88,14 @@ current_q_id = q_list[current_idx]
 active_state = st.session_state.quiz_state[current_q_id]
 q_info = QUIZ_DATA[current_q_id]
 
-# 모든 문제를 처리했는지 판정 (타임락까지 완전히 끝난 실패작만 완료로 인정)
+# 모든 문제를 처리했는지 판정
 all_completed = all(
     st.session_state.quiz_state[qid]["stage"] == "done" or 
     (st.session_state.quiz_state[qid]["stage"] == "exploded" and st.session_state.quiz_state[qid].get("lockout_done", False))
     for qid in QUIZ_DATA.keys()
 )
 
-# ⭐ [피드백 반영] 폭탄이 터졌을 때도 아이가 정답 문단을 강제로 공부할 수 있도록 'exploded' 상태일 때도 노란 형광펜 상시 유지
+# 형광펜 라이브 하이라이트 알고리즘
 highlight_para_num = None
 if active_state["stage"] == "step1":
     sb_value = st.session_state.get(f"sb_{current_q_id}")
@@ -172,14 +179,13 @@ with col2:
             if choice3 == q_info["answer"]:
                 active_state["stage"] = "done"; active_state["result"] = "3차 통과 🥉"
             else:
-                # 💥 3차 탈락 시 폭탄 대폭발 및 패널티 락온 진입
                 active_state["stage"] = "exploded"
                 active_state["mistakes"] = 3
                 active_state["result"] = "미션 실패 ❌"
                 active_state["lockout_done"] = False
             st.rerun()
 
-    # --- [💥 피드백 반영: 대폭발 및 1분 강제 잠금 타이머 모드] ---
+    # --- [💥 대폭발 및 1분 강제 잠금 타이머 모드] ---
     elif active_state["stage"] == "exploded":
         st.markdown(
             "<div style='background-color: #742A2A; color: #FFF5F5; padding: 25px; border-radius: 12px; text-align: center; border: 4px solid #E53E3E; box-shadow: 0px 4px 15px rgba(229, 62, 62, 0.5);'>"
@@ -191,38 +197,46 @@ with col2:
         )
         st.write("")
         
-        # 1분 동안 문제와 선택지를 계속 노출하되 버튼 및 클릭 요소는 완전히 잠금(disabled)
         st.markdown(f"<div style='font-size: 17px; font-weight: bold; color: #4A5568; background-color: #EDF2F7; padding: 12px; border-radius: 6px;'>📍 복습용 발문 고정: {q_info['question']}</div>", unsafe_allow_html=True)
         st.radio("선택지 복습 구역 (잠금됨):", q_info["options"], key=f"locked_opt_{current_q_id}", disabled=True)
         st.write("")
 
-        # ⏳ 실시간 60초 거꾸로 카운트다운 타이머 구동부
-        if not active_state.get("lockout_done", False):
-            timer_placeholder = st.empty()
-            for remaining in range(60, -1, -1):
-                timer_placeholder.error(f"⏳ 강제 복습 시스템 작동 중: {remaining}초 동안 다른 버튼이 비활성화됩니다.")
-                time.sleep(1) # 1초씩 스크립트 홀딩 및 새로고침 효과
-            active_state["lockout_done"] = True
-            st.rerun()
+        # ⭐ [핵심 로직 변경] 처음 터진 시점에 현실 시각 기준 '60초 뒤 미래 시간'을 고정 저장
+        if active_state["lockout_end_time"] is None:
+            active_state["lockout_end_time"] = time.time() + 60
 
-        # 🔓 60초 카운트다운이 무사히 끝나 시계가 0이 되면 잠금 해제 화면 출력
-        st.success("🔓 1분 복습이 만료되어 타임락이 해제되었습니다! 이제 패자부활전이 가능합니다.")
-        
-        col_retry, col_skip = st.columns(2)
-        with col_retry:
-            if st.button("🔄 이 문제 다시 풀기", type="primary", use_container_width=True):
-                # 점수와 상태를 초기화하여 아이가 다시 도전할 수 있게 리셋
-                active_state["stage"] = "solving"
-                active_state["mistakes"] = 0
-                active_state["wrong_para_warning"] = False
-                active_state["result"] = "진행 중 ⏳"
-                active_state["lockout_done"] = False
-                st.rerun()
-        with col_skip:
-            if current_idx < len(QUIZ_DATA) - 1:
-                if st.button("다음 문제로 그냥 넘어가기 ➡️", use_container_width=True):
-                    go_next()
+        # 현실 시계와 실시간 비교 연산
+        current_time = time.time()
+        remaining = int(active_state["lockout_end_time"] - current_time)
+
+        if remaining > 0:
+            timer_placeholder = st.empty()
+            timer_placeholder.error(f"⏳ 강제 복습 시스템 작동 중: {remaining}초 동안 다른 버튼이 비활성화됩니다.")
+            time.sleep(1)
+            st.rerun()  # 1초 주기로 브라우저를 강제 새로고침하여 시간 반영
+        else:
+            active_state["lockout_done"] = True
+
+        # 🔓 60초가 무사히 지나면 잠금 해제 인터페이스 오픈
+        if active_state["lockout_done"]:
+            st.success("🔓 1분 복습이 완료되어 타임락이 해제되었습니다!")
+            
+            col_retry, col_skip = st.columns(2)
+            with col_retry:
+                if st.button("🔄 이 문제 다시 풀기", type="primary", use_container_width=True):
+                    active_state["stage"] = "solving"
+                    active_state["mistakes"] = 0
+                    active_state["wrong_para_warning"] = False
+                    active_state["result"] = "진행 중 ⏳"
+                    active_state["lockout_end_time"] = None
+                    active_state["lockout_done"] = False
                     st.rerun()
+            with col_skip:
+                if current_idx < len(QUIZ_DATA) - 1:
+                    if st.button("다음 문제로 그냥 넘어가기 ➡️", use_container_width=True):
+                        active_state["lockout_end_time"] = None
+                        go_next()
+                        st.rerun()
 
     # --- [🎉 미션 성공 완료 단계] ---
     if active_state["stage"] == "done":
